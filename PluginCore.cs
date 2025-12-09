@@ -13,7 +13,6 @@ using UnityEngine;
 using Debug = UnityEngine.Debug;
 using UnityEngine.Rendering.Universal;
 using UnityInterface;
-using System.Threading.Tasks;
 
 [BepInPlugin("imystman12.baldifull.studentplus", "BB+ Plugin Student Plus", "1.0")]
 public class PluginCore : BaseUnityPlugin, INode
@@ -514,4 +513,15 @@ public struct Message
     public int playerId;
     public string note;
     public string context;
+}
+public static class InternetStation
+{
+    public static char[] Get(string key)
+    {
+        return default;
+    }
+    public static void Set(string key, char[] value)
+    {
+
+    }
 }
