@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
+using System.IO;
 using System.Text;
 using BepInEx;
 using HarmonyLib;
@@ -10,40 +8,23 @@ using Newtonsoft.Json;
 using Rewired;
 using Steamworks;
 using UnityEngine;
-using Debug = UnityEngine.Debug;
 using UnityEngine.Rendering.Universal;
-using UnityInterface;
+using Debug = UnityEngine.Debug;
 
 [BepInPlugin("imystman12.baldifull.studentplus", "BB+ Plugin Student Plus", "1.0")]
-public class PluginCore : BaseUnityPlugin, INode
+public class PluginCore : BaseUnityPlugin
 {
-    public P2PNode thisNode = new P2PNode();
-    public IPAddress address => IPAddress.Parse("127.0.0.99");
-
     public static PluginCore instance;
     public void Awake()
     {
         new Harmony("imystman12.baldifull.studentplus").PatchAll();
-
-        for (int i = 0; i < 4; i++)
-        {
-            Main.inputed[i] = new List<int>();
-            Main.inputedBut[i] = new List<Input_But>();
-            Main.inputedAxis[i] = new List<Input_Axis>();
-        }
-
         instance = this;
-        thisNode.showLog = true;
-        thisNode.Initialize(address, this);
     }
+}
 
-
-
-    public void SendMessages(int toPlayerId, Message msg)
-    {
-        thisNode.Send(toPlayerId, ToBytes(msg));
-    }
-
+[HarmonyPatch]
+public static class Main
+{
     public static byte[] ToBytes<T>(T nm)
     {
         return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(nm));
@@ -53,74 +34,37 @@ public class PluginCore : BaseUnityPlugin, INode
     {
         return JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(nm));
     }
-
-    public bool ShouldListening(int id, Socket node)
-    {
-        return true;
-    }
-
-    public void OnReceive(int id, Socket node, byte[] bytes)
-    {
-        if (bytes.Length == 0)
-        {
-            Debug.LogWarning("You haven't receive any messages yet!");
-            return;
-        }
-        Message msg = ToMessage<Message>(bytes);
-        switch (msg.type)
-        {
-            case MessageType.Tst:
-                Debug.LogWarning($"Received message from player{msg.playerId}!");
-                break;
-            case MessageType.EnterMatch:
-                Main.AddPlayer(msg);
-                break;
-            case MessageType.Input_But:
-                Main.AddInput(msg);
-                break;
-            case MessageType.Input_Axis:
-                Main.AddInput(msg);
-                break;
-        }
-    }
-}
-
-[HarmonyPatch]
-public static class Main
-{
     //bugs:audio listener,locker
     #region "Find Players"
 
     static bool started;
     static string roomName;
     public static List<int> playerIds = new List<int>();
-    public static Stopwatch watch;
     [HarmonyPatch(typeof(GameLoader), "LoadLevel"), HarmonyPrefix]
     public static bool LoadLevel(SceneObject sceneObject)
     {
-        watch = new Stopwatch();
-        watch.Start();
         playerIds.Clear();
-        playerIds.Add(PluginCore.instance.thisNode.id);
+        playerIds.Add(0);
         roomName = sceneObject.name + " " + PlayerFileManager.Instance.lifeMode.ToString() + " " + PlayerFileManager.Instance.inventoryChallenge.ToString() + " " + PlayerFileManager.Instance.mapChallenge.ToString() + " " + PlayerFileManager.Instance.timeLimitChallenge.ToString();
         Debug.LogWarning("Joining room: " + roomName);
-        Message msg = new Message()
+        bool flag = true;
+        string s;
+        s = Path.Combine(roomName, $"Player_{3}");
+        if (InternetStation.Get(s).Length != 0)
         {
-            playerId = playerIds[0],
-            type = MessageType.EnterMatch,
-            context = roomName
-        };
-        PluginCore.instance.thisNode.SendGlobal(PluginCore.ToBytes(msg));
-        return true;
-    }
-
-    public static void AddPlayer(Message msg)
-    {
-        if (!started && msg.context == roomName && playerIds.Count < 4)
-        {
-            watch.Restart();
-            playerIds.Add(msg.playerId);
+            Debug.LogWarning("This room has full of player! Quitting!");
+            return false;
         }
+        for (int i = 0, a = 1; flag && i < 4; a++, i++)
+        {
+            s = Path.Combine(roomName, $"Player_{i}");
+            if (InternetStation.Get(s).Length == 0)
+            {
+                InternetStation.Set(s, new byte[1] { 1 });
+                playerIds.Insert(0, i);
+            }
+        }
+        return true;
     }
 
     [HarmonyPatch(typeof(ElevatorScreen), "Update"), HarmonyPrefix]
@@ -130,10 +74,9 @@ public static class Main
         {
             return true;
         }
-        bool flag = playerIds.Count < 4 && watch.ElapsedMilliseconds < 50000;
+        bool flag = playerIds.Count < 4;
         if (!flag)
         {
-            watch.Stop();
             CoreGameManager.Instance.setPlayers = playerIds.Count;
             started = true;
         }
@@ -222,9 +165,9 @@ public static class Main
     public static bool isExit(Collider other, ColliderGroup instance)
     {
         //is player
-        if (other.tag != "Player" || BaseGameManager.Instance.GetValue<bool>("allNotebooksFound"))
+        //  if (other.tag != "Player" || BaseGameManager.Instance.GetValue<bool>("allNotebooksFound"))
         {
-            return false;
+            //  return false;
         }
 
         //is exit inside collider
@@ -340,23 +283,11 @@ public static class Main
     {
         if (playerNum != 0)
         {
-            if (inputed[playerNum].Count > 0 && inputed[playerNum][0] == 0 && inputedBut[playerNum].Count > 0)
-            {
-                Input_But imb = inputedBut[playerNum][0];
-                if (imb.id == id && imb.onDown == onDown)
-                {
-                    __result = imb.result;
-                }
-                inputedBut[playerNum].RemoveAt(0);
-            }
-            else
-            {
-                __result = false;
-            }
+            __result = InternetStation.Get(Path.Combine(roomName, $"Player_{playerNum}", id, onDown.ToString()))[0] != 0;
         }
         else
         {
-            SendThing(new Input_But() { id = id, onDown = onDown, result = __result });
+            InternetStation.Set(Path.Combine(roomName, $"Player_{playerNum}", id, onDown.ToString()), new byte[1] { (byte)(__result ? 1 : 0) });
         }
     }
 
@@ -365,23 +296,11 @@ public static class Main
     {
         if (playerNum != 0)
         {
-            if (inputed[playerNum].Count > 0 && inputed[playerNum][0] == 0 && inputedAxis[playerNum].Count > 0)
-            {
-                Input_Axis imb = inputedAxis[playerNum][0];
-                if (imb.id == actionName)
-                {
-                    __result = imb.result;
-                }
-                inputedAxis[playerNum].RemoveAt(0);
-            }
-            else
-            {
-                __result = 0;
-            }
+            __result = BitConverter.ToSingle(InternetStation.Get(Path.Combine(roomName, $"Player_{playerNum}", actionName)), 0);
         }
         else
         {
-            SendThing(new Input_Axis() { id = actionName, result = __result });
+            InternetStation.Set(Path.Combine(roomName, $"Player_{playerNum}", actionName), BitConverter.GetBytes(__result));
         }
     }
 
@@ -415,56 +334,7 @@ public static class Main
     #endregion
 
     #region "Sync Core"
-
     public static int playerNum;
-
-    public static void AddInput(Message msg)
-    {
-        if (playerIds.Contains(msg.playerId))
-        {
-            for (int i = 1; i < playerIds.Count; i++)
-            {
-                if (msg.playerId == playerIds[i])
-                {
-                    switch (msg.type)
-                    {
-                        case MessageType.Input_But:
-                            inputedBut[i].Add(JsonConvert.DeserializeObject<Input_But>(msg.context));
-                            break;
-                        case MessageType.Input_Axis:
-                            inputedAxis[i].Add(JsonConvert.DeserializeObject<Input_Axis>(msg.context));
-                            break;
-                    }
-                }
-            }
-        }
-    }
-
-    public static void SendThing<T>(T thing)
-    {
-        Message msg = new Message()
-        {
-            playerId = PluginCore.instance.thisNode.id,
-            context = JsonConvert.SerializeObject(thing)
-        };
-        if (typeof(T) == typeof(Input_But))
-        {
-            msg.type = MessageType.Input_But;
-        }
-        else if (typeof(T) == typeof(Input_Axis))
-        {
-            msg.type = MessageType.Input_Axis;
-        }
-        for (int i = 1; i < playerIds.Count; i++)
-        {
-            PluginCore.instance.SendMessages(playerIds[i], msg);
-        }
-    }
-
-    //0 But,1 Axis
-    public static List<int>[] inputed = new List<int>[4];
-    public static List<Input_But>[] inputedBut = new List<Input_But>[4];
-    public static List<Input_Axis>[] inputedAxis = new List<Input_Axis>[4];
     #endregion
 
     #region "More(>4) player(Experimental)"
@@ -487,18 +357,6 @@ public static class Main
     #endregion
 }
 [Serializable]
-public struct Input_But
-{
-    public bool result, onDown;
-    public string id;
-}
-[Serializable]
-public struct Input_Axis
-{
-    public float result;
-    public string id;
-}
-[Serializable]
 public enum MessageType
 {
     Tst,
@@ -516,11 +374,11 @@ public struct Message
 }
 public static class InternetStation
 {
-    public static char[] Get(string key)
+    public static byte[] Get(string key)
     {
         return default;
     }
-    public static void Set(string key, char[] value)
+    public static void Set(string key, byte[] value)
     {
 
     }
