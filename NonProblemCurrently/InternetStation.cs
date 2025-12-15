@@ -39,10 +39,19 @@ public static class InternetStation
         return JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(nm));
     }
 
-    public static void SetUp(IPEndPoint IP)
+    public static bool SetUp(IPEndPoint IP)
     {
         baseSocket = newSocket;
-        baseSocket.Bind(IP);
+        try
+        {
+            baseSocket.Bind(IP);
+            return true;
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"Mutiplayer set up failed! Switching to the off line mode! Exception: {e.ToString()}");
+            return false;
+        }
     }
     public static bool Connect(IPEndPoint IP)
     {

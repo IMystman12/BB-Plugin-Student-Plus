@@ -11,16 +11,23 @@ public class PluginCore : BaseUnityPlugin
     public static PluginCore instance;
     public void Awake()
     {
-        new Harmony("imystman12.baldifull.studentplus").PatchAll();
         instance = this;
 
-        InternetStation.SetUp(
-            IPFromString(
+        IPEndPoint iP = IPFromString(
                 Config.Bind(
                     new ConfigDefinition("Self IP is not your local device IP! The defualt value is not available too!", "Self IP"),
                new IPEndPoint(IPAddress.Any, 443).ToString()
                     ).Value
-                    ));
+                    );
+
+        Main.offline = InternetStation.SetUp(iP);
+
+        if (Main.offline)
+        {
+            new Harmony("imystman12.baldifull.studentplus").PatchAll();
+        }
+
+        Main.AddPlayerIP(iP);
 
         PlayerList playerListExample = new PlayerList()
         {
@@ -39,6 +46,11 @@ public class PluginCore : BaseUnityPlugin
             "Player List"),
             JsonConvert.SerializeObject(playerListExample)
             ).Value);
+
+        foreach (var item in playerList.playerIPs)
+        {
+            Main.AddPlayerIP(IPFromString(item));
+        }
 
         while (true)
         {
