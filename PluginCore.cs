@@ -7,10 +7,6 @@ using System.Text;
 using BepInEx;
 using HarmonyLib;
 using Newtonsoft.Json;
-using Rewired;
-using Steamworks;
-using UnityEngine;
-using UnityEngine.Rendering.Universal;
 using Debug = UnityEngine.Debug;
 
 [BepInPlugin("imystman12.baldifull.studentplus", "BB+ Plugin Student Plus", "1.0")]
