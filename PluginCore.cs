@@ -36,7 +36,7 @@ public class PluginCore : BaseUnityPlugin
         PlayerList playerList =
             JsonConvert.DeserializeObject<PlayerList>(
             Config.Bind<string>(
-            new ConfigDefinition("Max player count(including yourself) must less than 5! IP e.g 123.123.123.123:1234 (This IP is not available! Just a IP format!)! IPs in the list shouldn't be same!",
+            new ConfigDefinition("The defualt value isn't available too! Max player count(including yourself) must less than 5! IPs in the list shouldn't be same!",
             "Player List"),
             JsonConvert.SerializeObject(playerListExample)
             ).Value);
