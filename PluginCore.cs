@@ -9,7 +9,6 @@ using Newtonsoft.Json;
 public class PluginCore : BaseUnityPlugin
 {
     public static PluginCore instance;
-    IPEndPoint point = new IPEndPoint(IPAddress.Any, 443);
     public void Awake()
     {
         new Harmony("imystman12.baldifull.studentplus").PatchAll();
@@ -18,8 +17,8 @@ public class PluginCore : BaseUnityPlugin
         InternetStation.SetUp(
             IPFromString(
                 Config.Bind(
-                    new ConfigDefinition("Self IP isn't your local device IP! The defualt value isn't available too!", "SelfIP"),
-                 point.ToString()
+                    new ConfigDefinition("Self IP is not your local device IP! The defualt value is not available too!", "Self IP"),
+               new IPEndPoint(IPAddress.Any, 443).ToString()
                     ).Value
                     ));
 
@@ -27,16 +26,16 @@ public class PluginCore : BaseUnityPlugin
         {
             playerIPs = new string[3]
                 {
-                       point.ToString(),
-                          point.ToString(),
-                             point.ToString()
+                      new IPEndPoint(IPAddress.Broadcast, 443).ToString(),
+                       new IPEndPoint(IPAddress.Loopback, 443).ToString(),
+                             new IPEndPoint(IPAddress.IPv6Loopback, 443).ToString()
                 }
         };
 
         PlayerList playerList =
             JsonConvert.DeserializeObject<PlayerList>(
             Config.Bind<string>(
-            new ConfigDefinition("The defualt value isn't available too! Max player count(including yourself) must less than 5! IPs in the list shouldn't be same!",
+            new ConfigDefinition("The defualt value is not available too! Max player count(including yourself) must less than 5! IPs in the list should not be same!",
             "Player List"),
             JsonConvert.SerializeObject(playerListExample)
             ).Value);
