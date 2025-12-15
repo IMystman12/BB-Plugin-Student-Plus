@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using BepInEx;
 using HarmonyLib;
@@ -19,25 +21,18 @@ public class PluginCore : BaseUnityPlugin
     {
         new Harmony("imystman12.baldifull.studentplus").PatchAll();
         instance = this;
+        while (true)
+        {
+            InternetStation.Check();
+        }
     }
 }
 
 [HarmonyPatch]
 public static class Main
 {
-    public static byte[] ToBytes<T>(T nm)
-    {
-        return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(nm));
-    }
-
-    public static T ToMessage<T>(byte[] nm)
-    {
-        return JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(nm));
-    }
     //bugs:audio listener,locker
     #region "Find Players"
-
-    static bool started;
     static string roomName;
     public static List<int> playerIds = new List<int>();
     [HarmonyPatch(typeof(GameLoader), "LoadLevel"), HarmonyPrefix]
@@ -47,23 +42,6 @@ public static class Main
         playerIds.Add(0);
         roomName = sceneObject.name + " " + PlayerFileManager.Instance.lifeMode.ToString() + " " + PlayerFileManager.Instance.inventoryChallenge.ToString() + " " + PlayerFileManager.Instance.mapChallenge.ToString() + " " + PlayerFileManager.Instance.timeLimitChallenge.ToString();
         Debug.LogWarning("Joining room: " + roomName);
-        bool flag = true;
-        string s;
-        s = Path.Combine(roomName, $"Player_{3}");
-        if (InternetStation.Get(s).Length != 0)
-        {
-            Debug.LogWarning("This room has full of player! Quitting!");
-            return false;
-        }
-        for (int i = 0, a = 1; flag && i < 4; a++, i++)
-        {
-            s = Path.Combine(roomName, $"Player_{i}");
-            if (InternetStation.Get(s).Length == 0)
-            {
-                InternetStation.Set(s, new byte[1] { 1 });
-                playerIds.Insert(0, i);
-            }
-        }
         return true;
     }
 
@@ -283,11 +261,11 @@ public static class Main
     {
         if (playerNum != 0)
         {
-            __result = InternetStation.Get(Path.Combine(roomName, $"Player_{playerNum}", id, onDown.ToString()))[0] != 0;
+            __result = InternetStation.Get(Path.Combine($"Player_{playerIds[playerNum]}", id, onDown.ToString()))[0] != 0;
         }
         else
         {
-            InternetStation.Set(Path.Combine(roomName, $"Player_{playerNum}", id, onDown.ToString()), new byte[1] { (byte)(__result ? 1 : 0) });
+            InternetStation.Set(Path.Combine($"Player_{playerIds[playerNum]}", id, onDown.ToString()), new byte[1] { (byte)(__result ? 1 : 0) });
         }
     }
 
@@ -296,11 +274,11 @@ public static class Main
     {
         if (playerNum != 0)
         {
-            __result = BitConverter.ToSingle(InternetStation.Get(Path.Combine(roomName, $"Player_{playerNum}", actionName)), 0);
+            __result = BitConverter.ToSingle(InternetStation.Get(Path.Combine($"Player_{playerIds[playerNum]}", actionName)), 0);
         }
         else
         {
-            InternetStation.Set(Path.Combine(roomName, $"Player_{playerNum}", actionName), BitConverter.GetBytes(__result));
+            InternetStation.Set(Path.Combine($"Player_{playerIds[playerNum]}", actionName), BitConverter.GetBytes(__result));
         }
     }
 
@@ -356,30 +334,111 @@ public static class Main
     //}
     #endregion
 }
-[Serializable]
-public enum MessageType
-{
-    Tst,
-    EnterMatch,
-    Input_But,
-    Input_Axis
-}
-[Serializable]
-public struct Message
-{
-    public MessageType type;
-    public int playerId;
-    public string note;
-    public string context;
-}
 public static class InternetStation
 {
+    static Dictionary<string, byte[]> infos = new Dictionary<string, byte[]>();
+    static Socket baseSocket;
+    static List<Socket> availableSockets = new List<Socket>();
+    static Socket newSocket => new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+    public static bool AllConnected
+    {
+        get
+        {
+            for (int i = 0; i < availableSockets.Count; i++)
+            {
+                if (!availableSockets[i].Connected)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+    static byte[] tempDatas;
+    static Socket tempSocket;
+    static Message tempMessage;
+    public static byte[] ToBytes<T>(T nm)
+    {
+        return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(nm));
+    }
+
+    public static T ToMessage<T>(byte[] nm)
+    {
+        return JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(nm));
+    }
+
+    public static void SetUp(string host, int port)
+    {
+        baseSocket = newSocket;
+        baseSocket.Bind(new IPEndPoint(IPAddress.Parse(host), port));
+    }
+    public static bool Connect(string host, int port)
+    {
+        try
+        {
+            tempSocket = newSocket;
+            tempSocket.Connect(new IPEndPoint(IPAddress.Parse(host), port));
+            availableSockets.Add(tempSocket);
+            return tempSocket.Connected;
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"Try to connect player {host}:{port}! But it's failed. Exception: {e.ToString()}");
+            return false;
+        }
+    }
     public static byte[] Get(string key)
     {
+        if (infos.ContainsKey(key))
+        {
+            return infos[key];
+        }
         return default;
     }
     public static void Set(string key, byte[] value)
     {
-
+        foreach (Socket socket in availableSockets)
+        {
+            if (socket.Connected)
+            {
+                socket.Send(ToBytes(new Message() { key = key, value = value });
+            }
+        }
+    }
+    public static void Check()
+    {
+        foreach (Socket socket in availableSockets)
+        {
+            if (socket.Connected && socket.Available > 0)
+            {
+                tempDatas = new byte[socket.Available];
+                socket.Receive(tempDatas);
+                tempMessage = ToMessage<Message>(tempDatas);
+                if (infos.ContainsKey(tempMessage.key))
+                {
+                    infos[tempMessage.key] = tempMessage.value;
+                }
+                else
+                {
+                    infos.Add(tempMessage.key, tempMessage.value);
+                }
+            }
+        }
+    }
+    public static void ClearAll()
+    {
+        foreach (var item in availableSockets)
+        {
+            item.Shutdown(SocketShutdown.Both);
+            item.Close();
+            item.Dispose();
+        }
+        availableSockets.Clear();
+        infos.Clear();
+    }
+    struct Message
+    {
+        public string key;
+        public byte[] value;
     }
 }
