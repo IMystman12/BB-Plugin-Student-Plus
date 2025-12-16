@@ -10,15 +10,15 @@ public static class InternetStation
 {
     static Dictionary<string, byte[]> infos = new Dictionary<string, byte[]>();
     static Socket baseSocket;
-    static List<Socket> availableSockets = new List<Socket>();
+    static List<Socket> connectedSockets = new List<Socket>(), receivedSockets = new List<Socket>();
     static Socket newSocket => new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
     public static bool AllConnected
     {
         get
         {
-            for (int i = 0; i < availableSockets.Count; i++)
+            for (int i = 0; i < connectedSockets.Count; i++)
             {
-                if (!availableSockets[i].Connected)
+                if (!connectedSockets[i].Connected)
                 {
                     return false;
                 }
@@ -59,7 +59,7 @@ public static class InternetStation
         {
             tempSocket = newSocket;
             tempSocket.Connect(IP);
-            availableSockets.Add(tempSocket);
+            connectedSockets.Add(tempSocket);
             return tempSocket.Connected;
         }
         catch (Exception e)
@@ -78,7 +78,7 @@ public static class InternetStation
     }
     public static void Set(string key, byte[] value)
     {
-        foreach (Socket socket in availableSockets)
+        foreach (Socket socket in connectedSockets)
         {
             if (socket.Connected)
             {
@@ -88,7 +88,12 @@ public static class InternetStation
     }
     public static void Check()
     {
-        foreach (Socket socket in availableSockets)
+        tempSocket = baseSocket.Accept();
+        if (tempSocket != null)
+        {
+            receivedSockets.Add(tempSocket);
+        }
+        foreach (Socket socket in connectedSockets)
         {
             if (socket.Connected && socket.Available > 0)
             {
@@ -108,13 +113,13 @@ public static class InternetStation
     }
     public static void ClearAll()
     {
-        foreach (var item in availableSockets)
+        foreach (var item in connectedSockets)
         {
             item.Shutdown(SocketShutdown.Both);
             item.Close();
             item.Dispose();
         }
-        availableSockets.Clear();
+        connectedSockets.Clear();
         infos.Clear();
     }
     struct Message
